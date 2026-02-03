@@ -1,0 +1,33 @@
+# Core LLM API
+google-generativeai>=0.3.0
+
+# PDF Processing
+pypdf>=3.17.0
+pdfplumber>=0.10.0
+
+# Environment Variables
+python-dotenv>=1.0.0
+
+# Vector Database & Embeddings
+# Note: chromadb is optional - system falls back to in-memory store if not available
+# For Python 3.14, use newer chromadb version or skip it (in-memory fallback works)
+# chromadb>=0.4.22  # Uncomment if you want ChromaDB (may have compatibility issues with Python 3.14)
+sentence-transformers>=2.2.0
+
+# Arxiv API (Bonus Feature)
+arxiv>=1.4.0
+
+# Testing
+pytest>=7.4.0
+pytest-cov>=4.1.0
+
+# Utilities
+# Note: numpy 2.0+ may conflict with some packages - adjust if needed
+numpy>=1.24.0,<2.0.0  # Compatible with chromadb and other dependencies
+pandas>=2.0.0
+
+# API Server (for UI)
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+# Note: FastAPI works independently of chromadb - no conflict

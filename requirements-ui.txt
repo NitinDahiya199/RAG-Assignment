@@ -1,0 +1,9 @@
+# UI-specific requirements (install separately if needed)
+# These are the minimum requirements for the FastAPI backend
+
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+python-multipart>=0.0.6
+
+# All other dependencies should come from main requirements.txt
+# Install with: pip install -r requirements.txt -r requirements-ui.txt
