@@ -360,11 +360,11 @@ class QueryEngine:
                 "confidence": 0.0
             }
         
-        # Build context string
-        context_text = self._build_context_string(context, max_chunks=3)
+        # Build context string - use more chunks for better coverage
+        context_text = self._build_context_string(context, max_chunks=8)
         
         # Generate prompt
-        prompt = f"""Based on the following document content, provide a direct and concise answer to the question.
+        prompt = f"""Based on the following document content, provide a comprehensive and detailed answer to the question.
 
 Question: {question}
 
@@ -372,10 +372,11 @@ Document Content:
 {context_text}
 
 Instructions:
-- Provide a direct, factual answer
-- Be concise (2-3 sentences maximum)
-- Only use information from the provided content
-- If the answer is not in the content, say "The information is not available in the provided content."
+- Provide a thorough, well-structured answer with all relevant details
+- Include specific information, data, and examples from the document
+- Use bullet points or numbered lists when appropriate for clarity
+- Cover all aspects of the question found in the content
+- If the answer is not fully in the content, mention what was found and what is missing
 
 Answer:"""
         
@@ -401,20 +402,26 @@ Answer:"""
         # Extract topic from question
         topic = self._extract_topic_from_query(question)
         
-        # Build context string (use more chunks for summarization)
-        context_text = self._build_context_string(context, max_chunks=10)
+        # Build context string (use more chunks for comprehensive summarization)
+        context_text = self._build_context_string(context, max_chunks=15)
         
         # Generate prompt
-        prompt = f"""Summarize the following content about {topic}.
+        prompt = f"""Provide a comprehensive and detailed summary of the following content about {topic}.
 
 Content:
 {context_text}
 
 Instructions:
-- Provide a comprehensive summary (3-5 paragraphs)
-- Include main points and key findings
-- Organize information logically
-- Highlight important conclusions
+- Provide an extensive, well-structured summary covering all major aspects
+- Include:
+  * Main objectives and goals
+  * Key findings, results, and conclusions
+  * Methodology or approach used (if applicable)
+  * Important data, statistics, or metrics mentioned
+  * Recommendations or future work (if mentioned)
+- Use clear headings or sections to organize the summary
+- Include specific details and examples from the content
+- Make the summary comprehensive enough to understand the full scope of the document
 
 Summary:"""
         
@@ -495,11 +502,11 @@ JSON Response:"""
                 "confidence": 0.0
             }
         
-        # Build context string
-        context_text = self._build_context_string(context, max_chunks=5)
+        # Build context string - use more chunks for comprehensive answers
+        context_text = self._build_context_string(context, max_chunks=10)
         
         # Generate prompt
-        prompt = f"""Answer the following question based on the provided document content.
+        prompt = f"""Answer the following question based on the provided document content. Provide a comprehensive and detailed response.
 
 Question: {question}
 
@@ -507,10 +514,12 @@ Document Content:
 {context_text}
 
 Instructions:
-- Provide a clear and informative answer
-- Use only information from the provided content
-- If the answer is not in the content, say so
-- Include relevant details and context
+- Provide a thorough, well-organized answer with all relevant information
+- Include specific details, facts, figures, and examples from the document
+- Structure your response clearly using paragraphs, bullet points, or numbered lists
+- Cover all aspects related to the question
+- Quote or reference specific parts of the document when relevant
+- If certain aspects of the question aren't covered in the documents, mention what information is available and what is missing
 
 Answer:"""
         
@@ -636,15 +645,36 @@ Answer:"""
         if not context:
             return 0.0
         
-        # Average relevance scores
+        # Get relevance scores
         scores = [chunk.get("score", 0.0) for chunk in context]
-        avg_score = sum(scores) / len(scores) if scores else 0.0
         
-        # Adjust based on number of chunks
-        chunk_bonus = min(len(context) / 5.0, 0.2)  # Up to 0.2 bonus
+        # Use weighted average - top results matter more
+        if scores:
+            # Weight top results more heavily
+            weights = [1.0 / (i + 1) for i in range(len(scores))]
+            weighted_sum = sum(s * w for s, w in zip(scores, weights))
+            weight_total = sum(weights)
+            avg_score = weighted_sum / weight_total if weight_total > 0 else 0.0
+        else:
+            avg_score = 0.0
         
-        confidence = min(avg_score + chunk_bonus, 1.0)
-        return round(confidence, 2)
+        # Bonus for having more context
+        chunk_bonus = min(len(context) / 10.0, 0.25)  # Up to 0.25 bonus
+        
+        # Bonus for high top score
+        top_score_bonus = 0.0
+        if scores and scores[0] > 0.5:
+            top_score_bonus = 0.15
+        elif scores and scores[0] > 0.3:
+            top_score_bonus = 0.1
+        
+        # Intent-based adjustment
+        intent_bonus = 0.0
+        if intent == "summarization" and len(context) >= 5:
+            intent_bonus = 0.1  # More context = better summarization
+        
+        confidence = min(avg_score + chunk_bonus + top_score_bonus + intent_bonus, 1.0)
+        return round(max(confidence, 0.1), 2)  # Minimum 10% if we have context
     
     def _extract_topic_from_query(self, query: str) -> str:
         """Extract topic from summarization query."""

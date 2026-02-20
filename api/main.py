@@ -36,8 +36,10 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "http://localhost:3000",
+        "http://localhost:3001",
         "http://localhost:5173",
         "http://127.0.0.1:3000",
+        "http://127.0.0.1:3001",
         "http://127.0.0.1:5173",
         "http://localhost:8000",  # Allow direct access
     ],
@@ -112,14 +114,27 @@ async def upload_document(file: UploadFile = File(...)):
             # Process PDF
             result = document_processor.process_pdf(tmp_path)
             
+            # IMPORTANT: Replace temp filename with original filename
+            original_filename = file.filename
+            if isinstance(result, dict):
+                result["file_name"] = original_filename
+                result["file_path"] = original_filename
+            
             # Create chunks from processed document
+            # Using smaller chunks (500 chars) with more overlap (150) for better retrieval
             chunks = []
             if isinstance(result, dict):
                 # Chunk the document into smaller pieces for vector storage
-                chunks = document_processor.chunk_document(result)
+                chunks = document_processor.chunk_document(result, chunk_size=500, overlap=150)
             elif isinstance(result, list):
                 for doc in result:
-                    chunks.extend(document_processor.chunk_document(doc))
+                    doc["file_name"] = original_filename
+                    doc["file_path"] = original_filename
+                    chunks.extend(document_processor.chunk_document(doc, chunk_size=500, overlap=150))
+            
+            # Ensure all chunks have the correct document_id (original filename)
+            for chunk in chunks:
+                chunk["document_id"] = original_filename
             
             # Add to vector store
             if chunks:
@@ -151,7 +166,7 @@ async def upload_document(file: UploadFile = File(...)):
 async def query_documents(
     question: str = Form(...),
     user_id: Optional[str] = Form(None),
-    top_k: int = Form(5)
+    top_k: int = Form(10)  # Increased default for better context
 ):
     """
     Query the document collection.
@@ -159,7 +174,7 @@ async def query_documents(
     Args:
         question: User's question
         user_id: Optional user identifier
-        top_k: Number of results to retrieve
+        top_k: Number of results to retrieve (default increased to 10)
         
     Returns:
         Query response with answer and sources
@@ -174,9 +189,25 @@ async def query_documents(
                 detail="Query engine not available. Please check API key configuration."
             )
         
-        # Process query
+        # Use hybrid search for better retrieval
+        context = None
+        if vector_store:
+            try:
+                # Try hybrid search first (combines semantic + keyword)
+                context = vector_store.hybrid_search(
+                    query=question,
+                    top_k=top_k,
+                    semantic_weight=0.6,
+                    keyword_weight=0.4
+                )
+            except Exception:
+                # Fallback to regular search
+                context = vector_store.search(question, top_k=top_k)
+        
+        # Process query with retrieved context
         response = engine.query(
             question=question,
+            context=context,
             top_k=top_k,
             user_id=user_id,
             use_cache=True
@@ -188,7 +219,8 @@ async def query_documents(
             "answer": response.get("answer", ""),
             "confidence": response.get("confidence", 0.0),
             "sources": response.get("sources", []),
-            "intent": response.get("intent", "general")
+            "intent": response.get("intent", "general"),
+            "context_chunks": response.get("context_chunks_used", 0)
         }
         
     except Exception as e:

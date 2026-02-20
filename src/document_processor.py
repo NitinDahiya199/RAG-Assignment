@@ -282,10 +282,13 @@ class DocumentProcessor:
                 is_heading = True
                 level = 1
             
-            # Pattern 3: Title Case with no period
+            # Pattern 3: Title Case with no period - be more strict
+            # Only consider it a heading if it's short (less than 50 chars) and looks like a title
             elif (re.match(r'^[A-Z][a-z]+(\s+[A-Z][a-z]+)*$', line) and 
-                  not line.endswith('.') and len(line) < 100 and
-                  line not in ['Abstract', 'Introduction', 'Conclusion', 'References']):
+                  not line.endswith('.') and len(line) < 50 and len(line) > 3 and
+                  line.lower() in ['abstract', 'introduction', 'conclusion', 'references', 
+                                   'methodology', 'results', 'discussion', 'background',
+                                   'related work', 'future work', 'acknowledgments', 'appendix']):
                 is_heading = True
                 level = 2
             
@@ -522,54 +525,70 @@ class DocumentProcessor:
             })
             chunk_id += 1
         
-        # Fallback: If no sections were found, chunk the raw text
-        if not chunks and document.get("raw_text"):
+        # ALWAYS also chunk raw text to ensure we capture all content
+        # This is crucial because section extraction may miss content
+        if document.get("raw_text"):
             raw_text = document["raw_text"]
-            # Split raw text into chunks
-            words = raw_text.split()
-            current_chunk = []
-            current_length = 0
             
-            for word in words:
-                word_length = len(word) + 1  # +1 for space
+            # Check if sections have meaningful content
+            total_section_content = sum(len(s.get("content", "")) for s in document.get("sections", []))
+            raw_text_length = len(raw_text)
+            
+            # If sections captured less than 50% of raw text, add raw text chunks
+            should_add_raw = (not chunks) or (total_section_content < raw_text_length * 0.5)
+            
+            if should_add_raw:
+                logger.info(f"Adding raw text chunks (sections captured {total_section_content}/{raw_text_length} chars)")
                 
-                if current_length + word_length > chunk_size and current_chunk:
-                    # Save current chunk
-                    chunk_text = " ".join(current_chunk)
-                    chunks.append({
-                        "chunk_id": chunk_id,
-                        "document_id": document.get("file_name", "unknown"),
-                        "section": "Content",
-                        "level": 1,
-                        "content": chunk_text,
-                        "metadata": {
-                            "type": "text_chunk"
-                        }
-                    })
-                    chunk_id += 1
+                # Split raw text into chunks
+                words = raw_text.split()
+                current_chunk = []
+                current_length = 0
+                
+                for word in words:
+                    word_length = len(word) + 1  # +1 for space
                     
-                    # Start new chunk with overlap
-                    overlap_words = current_chunk[-overlap//10:] if len(current_chunk) > overlap//10 else current_chunk
-                    current_chunk = overlap_words + [word]
-                    current_length = sum(len(w) + 1 for w in current_chunk)
-                else:
-                    current_chunk.append(word)
-                    current_length += word_length
-            
-            # Add remaining chunk
-            if current_chunk:
-                chunk_text = " ".join(current_chunk)
-                chunks.append({
-                    "chunk_id": chunk_id,
-                    "document_id": document.get("file_name", "unknown"),
-                    "section": "Content",
-                    "level": 1,
-                    "content": chunk_text,
-                    "metadata": {
-                        "type": "text_chunk"
-                    }
-                })
+                    if current_length + word_length > chunk_size and current_chunk:
+                        # Save current chunk
+                        chunk_text = " ".join(current_chunk)
+                        # Only add if it has meaningful content (not just page markers)
+                        if len(chunk_text) > 50 and not chunk_text.startswith("--- Page"):
+                            chunks.append({
+                                "chunk_id": chunk_id,
+                                "document_id": document.get("file_name", "unknown"),
+                                "section": "Full Content",
+                                "level": 1,
+                                "content": chunk_text,
+                                "metadata": {
+                                    "type": "text_chunk"
+                                }
+                            })
+                            chunk_id += 1
+                        
+                        # Start new chunk with overlap
+                        overlap_words = current_chunk[-overlap//10:] if len(current_chunk) > overlap//10 else current_chunk
+                        current_chunk = overlap_words + [word]
+                        current_length = sum(len(w) + 1 for w in current_chunk)
+                    else:
+                        current_chunk.append(word)
+                        current_length += word_length
+                
+                # Add remaining chunk
+                if current_chunk:
+                    chunk_text = " ".join(current_chunk)
+                    if len(chunk_text) > 50:
+                        chunks.append({
+                            "chunk_id": chunk_id,
+                            "document_id": document.get("file_name", "unknown"),
+                            "section": "Full Content",
+                            "level": 1,
+                            "content": chunk_text,
+                            "metadata": {
+                                "type": "text_chunk"
+                            }
+                        })
         
+        logger.info(f"Created {len(chunks)} chunks from document")
         return chunks
     
     def process_with_vision(self, pdf_path: str, page_num: int) -> Optional[Dict]:

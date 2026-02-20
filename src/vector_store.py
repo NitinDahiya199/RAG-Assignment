@@ -504,3 +504,22 @@ class VectorStore:
             self.embeddings = []
             self.ids = []
             logger.info("Cleared in-memory store")
+    
+    def clear_collection(self):
+        """Clear all documents from the collection without deleting it."""
+        if self.use_chromadb:
+            try:
+                # Delete and recreate collection
+                self.client.delete_collection(name=self.collection_name)
+                self.collection = self.client.create_collection(
+                    name=self.collection_name,
+                    metadata={"hnsw:space": "cosine"}
+                )
+                logger.info(f"Cleared collection: {self.collection_name}")
+            except Exception as e:
+                logger.error(f"Error clearing collection: {str(e)}")
+        else:
+            self.documents = []
+            self.embeddings = []
+            self.ids = []
+            logger.info("Cleared in-memory store")
