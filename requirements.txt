@@ -22,8 +22,7 @@ pytest>=7.4.0
 pytest-cov>=4.1.0
 
 # Utilities
-# Note: numpy 2.0+ may conflict with some packages - adjust if needed
-numpy>=1.24.0,<2.0.0  # Compatible with chromadb and other dependencies
+numpy>=1.24.0
 pandas>=2.0.0
 
 # API Server (for UI)
